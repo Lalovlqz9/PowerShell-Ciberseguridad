@@ -1,0 +1,121 @@
+Set-StrictMode -Version Latest
+
+# Carga la API Key desde variable de entorno
+$Script:ApiKey     = if ($env:ABUSEIPDB_API_KEY) { $env:ABUSEIPDB_API_KEY } else { '' }
+$Script:HorasAtras = 24
+
+function Get-ForenseEvents {
+    param([int]$HorasAtras = $Script:HorasAtras)
+    $inicio = (Get-Date).AddHours(-$HorasAtras)
+    $ids    = @(4624, 4625, 4648, 4688, 4697, 7045, 1102)
+    $result = @()
+    foreach ($log in @('System', 'Security', 'Application')) {
+        $events = Get-WinEvent -FilterHashtable @{
+            LogName   = $log
+            StartTime = $inicio
+            Id        = $ids
+        } -ErrorAction SilentlyContinue
+        foreach ($e in $events) {
+            $result += [PSCustomObject]@{
+                Tiempo  = $e.TimeCreated
+                Log     = $e.LogName
+                EventID = $e.Id
+                Nivel   = $e.LevelDisplayName
+                Origen  = $e.ProviderName
+                Mensaje = ($e.Message -split "`n")[0]
+            }
+        }
+    }
+    return $result
+}
+
+function Get-ProcesoConexiones {
+    param([switch]$ExcluirLocales)
+    $conexiones = Get-NetTCPConnection -ErrorAction SilentlyContinue
+    if ($ExcluirLocales) {
+        $conexiones = $conexiones | Where-Object {
+            $_.RemoteAddress -notmatch '^127\.' -and
+            $_.RemoteAddress -notin @('::1', '0.0.0.0', '::')
+        }
+    }
+    $result = @()
+    foreach ($c in $conexiones) {
+        $proc        = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
+        $firmaStatus = 'Sin ruta / Desconocido'
+        if ($null -ne $proc -and $null -ne $proc.Path) {
+            $firma       = Get-AuthenticodeSignature -FilePath $proc.Path -ErrorAction SilentlyContinue
+            $firmaStatus = if ($firma.Status -eq 'Valid') { 'Firmado' } else { 'No Firmado / Inválido' }
+        }
+        $result += [PSCustomObject]@{
+            PID        = $c.OwningProcess
+            Proceso    = if ($proc) { $proc.Name } else { 'N/A' }
+            Firma      = $firmaStatus
+            LocalIP    = $c.LocalAddress
+            LocalPort  = $c.LocalPort
+            RemoteIP   = $c.RemoteAddress
+            RemotePort = $c.RemotePort
+            Estado     = $c.State
+        }
+    }
+    return $result
+}
+
+function Invoke-AbuseIPDBCheck {
+    param(
+        [Parameter(Mandatory)][string]$IPAddress,
+        [string]$ApiKey = $Script:ApiKey
+    )
+    # Valida que la clave esté configurada
+    if ([string]::IsNullOrWhiteSpace($ApiKey)) {
+        Write-Warning 'Configura la variable de entorno ABUSEIPDB_API_KEY.'
+        return [PSCustomObject]@{ IP = $IPAddress; Score = 'SIN API KEY'; Pais = 'N/A'; ISP = 'N/A' }
+    }
+    # IPs privadas no se consultan
+    if ($IPAddress -match '^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.)') {
+        return [PSCustomObject]@{ IP = $IPAddress; Score = 'N/A'; Pais = 'Privada'; ISP = 'N/A' }
+    }
+    try {
+        $r = Invoke-RestMethod `
+            -Uri "https://api.abuseipdb.com/api/v2/check?ipAddress=$IPAddress&maxAgeInDays=90" `
+            -Headers @{ Key = $ApiKey; Accept = 'application/json' } `
+            -Method Get
+        $score = if ($null -ne $r.data.abuseConfidenceScore) { $r.data.abuseConfidenceScore } else { '0 (Sin registro)' }
+        return [PSCustomObject]@{
+            IP            = $IPAddress
+            Score         = $score
+            TotalReportes = $r.data.totalReports
+            Pais          = $r.data.countryCode
+            ISP           = $r.data.isp
+        }
+    } catch {
+        return [PSCustomObject]@{ IP = $IPAddress; Score = 'ERROR API'; Pais = 'ERROR'; ISP = $_.Exception.Message }
+    }
+}
+
+function New-ForenseReport {
+    param(
+        [string]$Ruta = "$env:USERPROFILE\Desktop\Reporte_Forense_$(Get-Date -Format 'yyyyMMdd_HHmmss').html"
+    )
+    $head = '<style>body{font-family:Arial;} table{border-collapse:collapse; width:100%;}
+             th,td{border:1px solid #ddd; padding:8px;} th{background:#4CAF50; color:white;}</style>'
+    $eventosData = Get-ForenseEvents
+    if ($eventosData.Count -eq 0) {
+        $eventosHtml = '<h2>Eventos Críticos</h2><p>Sin eventos en el rango solicitado.</p>'
+    } else {
+        $eventosHtml = $eventosData | ConvertTo-Html -Fragment -PreContent '<h2>Eventos Críticos</h2>'
+    }
+    $conexiones     = Get-ProcesoConexiones -ExcluirLocales
+    $conexionesHtml = $conexiones | ConvertTo-Html -Fragment -PreContent '<h2>Conexiones de Red</h2>'
+    $ips            = $conexiones.RemoteIP | Sort-Object -Unique
+    $resultadosIps  = @()
+    foreach ($ip in $ips) {
+        $resultadosIps += Invoke-AbuseIPDBCheck -IPAddress $ip
+        Start-Sleep -Milliseconds 500
+    }
+    $ipsHtml = $resultadosIps | ConvertTo-Html -Fragment -PreContent '<h2>Investigación de IPs (AbuseIPDB)</h2>'
+    ConvertTo-Html -Head $head -Body "$eventosHtml $conexionesHtml $ipsHtml" `
+        -Title 'Reporte Forense' | Out-File -FilePath $Ruta -Encoding UTF8
+    Write-Host "Reporte HTML guardado en: $Ruta" -ForegroundColor Green
+}
+
+Export-ModuleMember -Function Get-ForenseEvents, Get-ProcesoConexiones, Invoke-AbuseIPDBCheck, New-ForenseReport

@@ -1,0 +1,59 @@
+Import-Module .\ModuloForense.psd1 -Force
+
+function Show-Menu {
+    Clear-Host
+    Write-Host '=========================================' -ForegroundColor Cyan
+    Write-Host '      HERRAMIENTA DE ANÁLISIS FORENSE    ' -ForegroundColor Cyan
+    Write-Host '=========================================' -ForegroundColor Cyan
+    Write-Host '1. Exportar Eventos Críticos (CSV)'
+    Write-Host '2. Analizar Conexiones y Procesos (CSV)'
+    Write-Host '3. Generar Reporte Completo (HTML)'
+    Write-Host '4. Salir'
+    Write-Host '-----------------------------------------'
+}
+
+do {
+    Show-Menu
+    $opcion = Read-Host 'Seleccione una opción'
+    switch ($opcion) {
+        '1' {
+            try {
+                $horasInput = Read-Host 'Ingrese las horas hacia atrás (Ej. 24)'
+                $eventos    = Get-ForenseEvents -HorasAtras ([int]$horasInput)
+                if ($null -eq $eventos -or $eventos.Count -eq 0) {
+                    Write-Warning 'Sin eventos en el rango solicitado.'
+                } else {
+                    $eventos | Export-Csv -Path '.\EventosCriticos.csv' `
+                               -NoTypeInformation -Encoding UTF8
+                    Write-Host '-> Exportado a EventosCriticos.csv' -ForegroundColor Green
+                }
+            } catch { Write-Error "Error al procesar eventos: $_" }
+            Pause
+        }
+        '2' {
+            try {
+                Write-Host 'Analizando conexiones...' -ForegroundColor Yellow
+                $conexiones = Get-ProcesoConexiones -ExcluirLocales
+                $agrupado   = $conexiones | Group-Object Proceso | Select-Object Name, Count
+                Write-Host "`nResumen por proceso:" -ForegroundColor Cyan
+                $agrupado | Format-Table -AutoSize
+                $conexiones | Export-Csv -Path '.\Conexiones.csv' `
+                             -NoTypeInformation -Encoding UTF8
+                Write-Host '-> Exportado a Conexiones.csv' -ForegroundColor Green
+            } catch { Write-Error "Error al procesar conexiones: $_" }
+            Pause
+        }
+        '3' {
+            try {
+                Write-Host 'Generando reporte HTML...' -ForegroundColor Yellow
+                New-ForenseReport
+            } catch { Write-Error "Error generando el reporte: $_" }
+            Pause
+        }
+        '4' { Write-Host 'Saliendo...' -ForegroundColor Yellow }
+        default {
+            Write-Warning 'Opción no válida. Intente de nuevo.'
+            Start-Sleep -Seconds 2
+        }
+    }
+} until ($opcion -eq '4')

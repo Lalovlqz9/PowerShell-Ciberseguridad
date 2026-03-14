@@ -1,0 +1,17 @@
+@{
+    RootModule        = 'Modulo.psm1'
+    ModuleVersion     = '1.0.0.0'
+    GUID              = 'c9a2d3b4-1e2f-4a5b-9c8d-7e6f5a4b3c2d'
+    Author            = 'Equipo de Seguridad'
+    Description       = 'Módulo forense para extracción de eventos, análisis de conexiones de red y reputación de IPs.'
+    PowerShellVersion = '5.1'
+    FunctionsToExport = @(
+        'Get-ForenseEvents',
+        'Get-ProcesoConexiones',
+        'Invoke-AbuseIPDBCheck',
+        'New-ForenseReport'
+    )
+    CmdletsToExport   = @()
+    VariablesToExport = @()
+    AliasesToExport   = @()
+}
