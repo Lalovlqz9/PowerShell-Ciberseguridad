@@ -11,6 +11,6 @@ Aprendimos a trabajar con módulos de PowerShell usando manifiesto .psd1, a cons
 Equipo:
 Eduardo Velazquez Zepeda
 Fernando de Jesus Gutierrez Lopez
-Pablo Javier Mor Delgadillo
-Gabriel Aguuiñaga Ruiz
+Pablo Javier Mora Delgadillo
+Gabriel Aguiñaga Ruiz
 Eliseo Ojeda Hernandez
