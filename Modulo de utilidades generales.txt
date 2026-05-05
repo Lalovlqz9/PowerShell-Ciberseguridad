@@ -1,0 +1,124 @@
+"""
+utilidades.py - Módulo de utilidades generales para CyberScan Pro.
+Provee funciones de logging, hashing, codificación y utilidades compartidas.
+"""
+
+import os
+import hashlib
+import logging
+import json
+import base64
+from datetime import datetime
+from pathlib import Path
+
+# ──────────────────────────────────────────────────────────────
+# RUTAS DEL PROYECTO
+# ──────────────────────────────────────────────────────────────
+BASE_DIR       = Path(__file__).parent.parent
+LOGS_DIR       = BASE_DIR / "logs"
+RESULTADOS_DIR = BASE_DIR / "resultados"
+
+LOGS_DIR.mkdir(exist_ok=True)
+RESULTADOS_DIR.mkdir(exist_ok=True)
+
+
+# ──────────────────────────────────────────────────────────────
+# LOGGING
+# ──────────────────────────────────────────────────────────────
+def configurar_logger(nombre: str) -> logging.Logger:
+    """Configura y retorna un logger con salida a archivo y consola."""
+    logger = logging.getLogger(nombre)
+    if logger.handlers:
+        return logger  # ya configurado
+
+    logger.setLevel(logging.DEBUG)
+
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    # Handler → archivo
+    log_file = LOGS_DIR / f"{nombre}_{datetime.now().strftime('%Y%m%d')}.log"
+    fh = logging.FileHandler(log_file, encoding="utf-8")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(fmt)
+
+    # Handler → consola
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(fmt)
+
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    return logger
+
+
+# ──────────────────────────────────────────────────────────────
+# HASHING  (integridad de archivos)
+# ──────────────────────────────────────────────────────────────
+def calcular_hash_archivo(ruta: str, algoritmo: str = "sha256") -> str:
+    """
+    Calcula el hash de un archivo para verificación de integridad.
+    Algoritmos soportados: md5, sha1, sha256, sha512.
+    """
+    try:
+        h = hashlib.new(algoritmo)
+        with open(ruta, "rb") as f:
+            for bloque in iter(lambda: f.read(8192), b""):
+                h.update(bloque)
+        return h.hexdigest()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Archivo no encontrado: {ruta}")
+    except ValueError:
+        raise ValueError(f"Algoritmo no soportado: {algoritmo}")
+
+
+def calcular_hash_texto(texto: str, algoritmo: str = "sha256") -> str:
+    """Calcula el hash de un string."""
+    h = hashlib.new(algoritmo)
+    h.update(texto.encode("utf-8"))
+    return h.hexdigest()
+
+
+# ──────────────────────────────────────────────────────────────
+# CODIFICACIÓN BASE64
+# ──────────────────────────────────────────────────────────────
+def codificar_base64(texto: str) -> str:
+    """Codifica un string en Base64."""
+    return base64.b64encode(texto.encode("utf-8")).decode("utf-8")
+
+
+def decodificar_base64(texto_b64: str) -> str:
+    """Decodifica un string desde Base64."""
+    return base64.b64decode(texto_b64.encode("utf-8")).decode("utf-8")
+
+
+# ──────────────────────────────────────────────────────────────
+# JSON
+# ──────────────────────────────────────────────────────────────
+def guardar_json(datos: dict, nombre_archivo: str) -> str:
+    """Guarda datos como JSON en la carpeta de resultados."""
+    ruta = RESULTADOS_DIR / nombre_archivo
+    with open(ruta, "w", encoding="utf-8") as f:
+        json.dump(datos, f, ensure_ascii=False, indent=2)
+    return str(ruta)
+
+
+def cargar_json(ruta: str) -> dict:
+    """Carga y retorna datos desde un archivo JSON."""
+    with open(ruta, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ──────────────────────────────────────────────────────────────
+# TIMESTAMPS
+# ──────────────────────────────────────────────────────────────
+def timestamp() -> str:
+    """Retorna el timestamp actual como string legible."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def timestamp_archivo() -> str:
+    """Retorna timestamp para usar en nombres de archivo."""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
